@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.email         = ["contact@mauromorales.com"]
   spec.description   = %q{form habits through your CLI}
   spec.summary       = %q{form habits through your CLI}
-  spec.homepage      = ""
+  spec.homepage      = "https://github.com/mauromorales/commit"
   spec.license       = "MIT"
 
   spec.files         = `git ls-files`.split($/)
