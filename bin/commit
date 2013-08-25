@@ -4,22 +4,25 @@ require 'optparse'
 require 'thor'
 require 'yaml'
 
-USER_PATH = File.expand_path("~/")
-Dir.mkdir(File.join(USER_PATH, ".commitments")) unless Dir.exists?(File.join(USER_PATH, ".commitments"))
-COMMITMENTS_PATH = File.join(USER_PATH, ".commitments")
+TIME = Time.now
 
 class Commitment < Thor
+
+  class_option :path, :type => :string
+
+
   desc "start", "Creates a new commitment"
   def start
     puts "What will you commit to? (use a verb, ie: run)"
     commitment = get_stdin("I will: ")
     puts "Great! You have commited to #{commitment} daily"
-    generate commitment
+    generate get_path(options[:path]), commitment
   end
 
   desc "list", "Shows all your commitments"
   def list
-    commitments = Dir.entries(COMMITMENTS_PATH) - [".", ".."]
+    commitments_path = get_path(options[:path])
+    commitments = Dir.entries(commitments_path) - [".", ".."]
     if commitments.empty?
       puts "You haven't commited to anything yet. Start a new commitment by running 'commit start'"
     else
@@ -32,8 +35,10 @@ class Commitment < Thor
 
   desc "show COMMITMENT", "Shows the information for the specified commitment"
   def show(commitment)
-    data = YAML::load(File.open(File.join(COMMITMENTS_PATH, commitment, 'config.yml')))
+    commitments_path = get_path(options[:path])
+    data = YAML::load(File.open(File.join(commitments_path, commitment, 'config.yml')))
     puts "You started to #{commitment} since #{data['started_on']}"
+    puts "Your last checkin was on #{data['last_checkin']}"
     current_chain = "#" * data['current_chain']
     puts "Your current chain is: #{data['current_chain']} #{current_chain}"
     longest_chain = "#" * data['longest_chain']
@@ -42,26 +47,54 @@ class Commitment < Thor
 
   desc "checkin COMMITMENT", "Tells commit you did your specified commitment today"
   def checkin(commitment)
-    time = Time.now
-    File.open(File.join(COMMITMENTS_PATH, commitment, 'daily.log'), 'a') do |config|
-      config.puts time
+    commitments_path = get_path(options[:path])
+    data = YAML::load(File.open(File.join(commitments_path, commitment, 'config.yml')))
+    is_new = data['last_checkin'].nil?
+    last_checkin = is_new ? data['started_on'] : data['last_checkin']
+    last = Date.parse(last_checkin.to_s)
+    diff = Date.today - last
+    update = true
+    if diff > 1
+      data['current_chain'] = 1
+      puts "Glad to see you back"
+      log commitments_path, commitment
+    elsif diff < 1
+      if is_new
+        log commitments_path, commitment
+        data['current_chain'] = data['current_chain'] + 1
+        puts "Awesome your first commit!"
+      else
+        update = false
+        puts "You already checked in today"
+      end
+    else
+      log commitments_path, commitment
+      data['current_chain'] = data['current_chain'] + 1
+      puts "Awesome you did it!"
     end
-    data = YAML::load(File.open(File.join(COMMITMENTS_PATH, commitment, 'config.yml')))
-    data['last_checkin'] = time
-    data['current_chain'] = data['current_chain'] + 1
+    data['last_checkin'] = TIME
     data['longest_chain'] = data['longest_chain'] < data['current_chain'] ? data['current_chain'] : data['longest_chain']
-    File.open(File.join(COMMITMENTS_PATH, commitment, 'config.yml'), 'w') { |f| YAML.dump(data, f) }
-    puts "Awesome you did it!"
+    File.open(File.join(commitments_path, commitment, 'config.yml'), 'w') { |f| YAML.dump(data, f) } if update
+    puts "You started to #{commitment} since #{data['started_on']}"
+    current_chain = "#" * data['current_chain']
+    puts "Your current chain is: #{data['current_chain']} #{current_chain}"
+    longest_chain = "#" * data['longest_chain']
+    puts "Your longest chain is: #{data['longest_chain']} #{longest_chain}"
   end
 
 end
 
-def generate(commitment)
-  Dir.mkdir(File.join(COMMITMENTS_PATH, commitment)) unless Dir.exists?(File.join(COMMITMENTS_PATH, commitment))
-  File.open(File.join(COMMITMENTS_PATH, commitment, 'config.yml'), 'w') do |config|
-    time = Time.now
+def log(path, commitment)
+  File.open(File.join(path, commitment, 'daily.log'), 'a') do |config|
+    config.puts TIME
+  end
+end
+
+def generate(path, commitment)
+  Dir.mkdir(File.join(path, commitment)) unless Dir.exists?(File.join(path, commitment))
+  File.open(File.join(path, commitment, 'config.yml'), 'w') do |config|
     config.puts "---"
-    config.puts "started_on: #{time}"
+    config.puts "started_on: #{TIME}"
     config.puts "longest_chain: 0"
     config.puts "current_chain: 0"
   end
@@ -70,6 +103,13 @@ end
 def get_stdin(message)
   print message
   STDIN.gets.chomp
+end
+
+def get_path(path)
+  path = File.join(File.expand_path("~/"), '.commitments') if path.nil?
+  path = File.expand_path(path) if path[0] == "~"
+  Dir.mkdir(path) unless Dir.exists?(path)
+  path
 end
 
 Commitment.start
